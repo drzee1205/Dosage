@@ -17,16 +17,97 @@ model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String?
+  role      UserRole @default(PARENT)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum UserRole {
+  PARENT
+  NURSE
+  DOCTOR
+  PHARMACIST
+  SPECIALIST
+}
+
+model MedicalCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  drugs       Drug[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Drug {
+  id               String           @id @default(cuid())
+  name             String
+  genericName      String?
+  brandNames       String?
+  category         MedicalCategory  @relation(fields: [categoryId], references: [id])
+  categoryId       String
+  indications      String?
+  contraindications String?
+  dosageInfo       DosageInfo[]
+  sideEffects      String?
+  precautions      String?
+  monitoring       String?
+  interactions     String?
+  pregnancyCategory String?
+  breastfeedingInfo String?
+  pediatricNotes   String?
+  drug1Interactions DrugInteraction[] @relation("Drug1Interaction")
+  drug2Interactions DrugInteraction[] @relation("Drug2Interaction")
+  dosageCalculations DosageCalculation[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model DosageInfo {
+  id              String   @id @default(cuid())
+  drug            Drug     @relation(fields: [drugId], references: [id])
+  drugId          String
+  ageGroup        String
+  weightRange     String?
+  dosage          String
+  frequency       String
+  route           String
+  maxDailyDose    String?
+  duration        String?
+  specialNotes    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DrugInteraction {
+  id            String   @id @default(cuid())
+  drug1         Drug     @relation("Drug1Interaction", fields: [drug1Id], references: [id])
+  drug1Id       String
+  drug2         Drug     @relation("Drug2Interaction", fields: [drug2Id], references: [id])
+  drug2Id       String
+  severity      InteractionSeverity
+  description   String
+  management    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum InteractionSeverity {
+  MINOR
+  MODERATE
+  MAJOR
+  CONTRAINDICATED
+}
+
+model DosageCalculation {
+  id          String   @id @default(cuid())
+  drug        Drug     @relation(fields: [drugId], references: [id])
+  drugId      String
+  patientAge  String
+  patientWeight String
+  calculation String
+  result      String
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
