@@ -1,4 +1,476 @@
-import * as fs from 'fs';\nimport * as path from 'path';\n\n// Interface for extracted drug data\nexport interface ExtractedDrugData {\n  name: string;\n  genericName?: string;\n  brandNames?: string;\n  indications: string;\n  contraindications?: string;\n  sideEffects?: string;\n  precautions?: string;\n  dosageInfo: DosageInfo[];\n  category: string;\n  source: string;\n}\n\nexport interface DosageInfo {\n  ageGroup: string;\n  weightRange: string;\n  dosage: string;\n  frequency: string;\n  route: string;\n  maxDailyDose?: string;\n}\n\nexport interface ParsedTableData {\n  category: string;\n  drugs: ExtractedDrugData[];\n  tableName: string;\n  pageNumber?: number;\n}\n\n/**\n * Parse DOCX file to extract drug dosage tables\n * This is a placeholder implementation that would need a proper DOCX parsing library\n */\nexport async function parseDocxFile(filePath: string): Promise<ParsedTableData[]> {\n  try {\n    // Check if file exists\n    if (!fs.existsSync(filePath)) {\n      throw new Error(`File not found: ${filePath}`);\n    }\n\n    // This is a mock implementation\n    // In a real implementation, you would use a library like 'mammoth' or 'docx'\n    // to parse the DOCX file and extract table data\n    \n    console.log(`Parsing DOCX file: ${filePath}`);\n    \n    // Mock parsed data - in reality this would come from the DOCX parser\n    const mockData: ParsedTableData[] = [\n      {\n        category: 'Infectious Diseases',\n        tableName: 'Antibiotic Dosages for Children',\n        pageNumber: 1,\n        drugs: [\n          {\n            name: 'Amoxicillin',\n            genericName: 'Amoxicillin',\n            brandNames: 'Amoxil, Augmentin',\n            indications: 'Bacterial infections, otitis media, strep throat',\n            contraindications: 'Penicillin allergy',\n            sideEffects: 'Diarrhea, rash, allergic reactions',\n            precautions: 'Monitor for allergic reactions, adjust dose in renal impairment',\n            dosageInfo: [\n              {\n                ageGroup: 'Children < 40 kg',\n                weightRange: '10-40 kg',\n                dosage: '25-45 mg/kg/day divided',\n                frequency: 'Every 8-12 hours',\n                route: 'Oral',\n                maxDailyDose: '90 mg/kg/day'\n              }\n            ],\n            category: 'Infectious Diseases',\n            source: filePath\n          }\n        ]\n      }\n    ];\n\n    return mockData;\n  } catch (error) {\n    console.error('Error parsing DOCX file:', error);\n    throw error;\n  }\n}\n\n/**\n * Extract drug data from multiple DOCX files in a directory\n */\nexport async function extractDrugsFromDocxFiles(directoryPath: string): Promise<ExtractedDrugData[]> {\n  try {\n    if (!fs.existsSync(directoryPath)) {\n      throw new Error(`Directory not found: ${directoryPath}`);\n    }\n\n    const files = fs.readdirSync(directoryPath);\n    const docxFiles = files.filter(file => file.endsWith('.docx') || file.endsWith('.doc'));\n    \n    const allDrugs: ExtractedDrugData[] = [];\n\n    for (const file of docxFiles) {\n      const filePath = path.join(directoryPath, file);\n      try {\n        const parsedData = await parseDocxFile(filePath);\n        const drugs = parsedData.flatMap(data => data.drugs);\n        allDrugs.push(...drugs);\n      } catch (error) {\n        console.error(`Error parsing file ${file}:`, error);\n      }\n    }\n\n    return allDrugs;\n  } catch (error) {\n    console.error('Error extracting drugs from DOCX files:', error);\n    throw error;\n  }\n}\n\n/**\n * Validate extracted drug data\n */\nexport function validateDrugData(drug: ExtractedDrugData): boolean {\n  const requiredFields = ['name', 'indications', 'dosageInfo', 'category'];\n  \n  for (const field of requiredFields) {\n    if (!drug[field as keyof ExtractedDrugData]) {\n      console.warn(`Missing required field '${field}' in drug: ${drug.name}`);\n      return false;\n    }\n  }\n\n  if (!Array.isArray(drug.dosageInfo) || drug.dosageInfo.length === 0) {\n    console.warn(`No dosage information for drug: ${drug.name}`);\n    return false;\n  }\n\n  for (const dosage of drug.dosageInfo) {\n    const dosageRequiredFields = ['ageGroup', 'weightRange', 'dosage', 'frequency', 'route'];\n    for (const field of dosageRequiredFields) {\n      if (!dosage[field as keyof DosageInfo]) {\n        console.warn(`Missing required dosage field '${field}' in drug: ${drug.name}`);\n        return false;\n      }\n    }\n  }\n\n  return true;\n}\n\n/**\n * Clean and normalize extracted drug data\n */\nexport function cleanDrugData(drug: ExtractedDrugData): ExtractedDrugData {\n  return {\n    ...drug,\n    name: drug.name.trim(),\n    genericName: drug.genericName?.trim(),\n    brandNames: drug.brandNames?.trim(),\n    indications: drug.indications.trim(),\n    contraindications: drug.contraindications?.trim(),\n    sideEffects: drug.sideEffects?.trim(),\n    precautions: drug.precautions?.trim(),\n    category: drug.category.trim(),\n    dosageInfo: drug.dosageInfo.map(dosage => ({\n      ...dosage,\n      ageGroup: dosage.ageGroup.trim(),\n      weightRange: dosage.weightRange.trim(),\n      dosage: dosage.dosage.trim(),\n      frequency: dosage.frequency.trim(),\n      route: dosage.route.trim(),\n      maxDailyDose: dosage.maxDailyDose?.trim()\n    }))\n  };\n}\n\n/**\n * Convert extracted drug data to the format used in the application\n */\nexport function convertToAppFormat(drugs: ExtractedDrugData[]) {\n  const categorizedDrugs: Record<string, any[]> = {};\n\n  drugs.forEach(drug => {\n    const categoryKey = getCategoryKey(drug.category);\n    if (!categorizedDrugs[categoryKey]) {\n      categorizedDrugs[categoryKey] = [];\n    }\n\n    categorizedDrugs[categoryKey].push({\n      id: generateDrugId(drug.name, categoryKey),\n      name: drug.name,\n      genericName: drug.genericName || drug.name,\n      brandNames: drug.brandNames || '',\n      contraindications: drug.contraindications || '',
+import * as fs from 'fs';
+import * as path from 'path';
+import * as mammoth from 'mammoth';
+
+// Interface for extracted drug data
+export interface ExtractedDrugData {
+  name: string;
+  genericName?: string;
+  brandNames?: string;
+  indications: string;
+  contraindications?: string;
+  sideEffects?: string;
+  precautions?: string;
+  dosageInfo: DosageInfo[];
+  category: string;
+  source: string;
+}
+
+export interface DosageInfo {
+  ageGroup: string;
+  weightRange: string;
+  dosage: string;
+  frequency: string;
+  route: string;
+  maxDailyDose?: string;
+}
+
+export interface ParsedTableData {
+  category: string;
+  drugs: ExtractedDrugData[];
+  tableName: string;
+  pageNumber?: number;
+}
+
+/**
+ * Parse DOCX file to extract drug dosage tables using mammoth library
+ */
+export async function parseDocxFile(filePath: string): Promise<ParsedTableData[]> {
+  try {
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    console.log(`Parsing DOCX file: ${filePath}`);
+
+    // Read the DOCX file buffer
+    const buffer = fs.readFileSync(filePath);
+    
+    // Extract HTML content using mammoth
+    const result = await mammoth.convertToHtml({ buffer });
+    const html = result.value;
+
+    // Parse the HTML to extract table data
+    const parsedData = parseHtmlForDrugTables(html, filePath);
+
+    console.log(`Extracted ${parsedData.length} table sections from ${filePath}`);
+    return parsedData;
+  } catch (error) {
+    console.error('Error parsing DOCX file:', error);
+    throw error;
+  }
+}
+
+/**
+ * Parse HTML content to extract drug tables
+ */
+function parseHtmlForDrugTables(html: string, sourceFile: string): ParsedTableData[] {
+  const tables: ParsedTableData[] = [];
+  
+  // Simple HTML parsing to find tables
+  const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+  let match;
+  
+  while ((match = tableRegex.exec(html)) !== null) {
+    const tableHtml = match[1];
+    const tableData = parseTableHtml(tableHtml, sourceFile);
+    
+    if (tableData.drugs.length > 0) {
+      tables.push(tableData);
+    }
+  }
+  
+  return tables;
+}
+
+/**
+ * Parse individual table HTML to extract drug data
+ */
+function parseTableHtml(tableHtml: string, sourceFile: string): ParsedTableData {
+  const drugs: ExtractedDrugData[] = [];
+  
+  // Extract rows from table
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const rows: string[][] = [];
+  let rowMatch;
+  
+  while ((rowMatch = rowRegex.exec(tableHtml)) !== null) {
+    const rowHtml = rowMatch[1];
+    const cells: string[] = [];
+    
+    // Extract cells from row
+    const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    let cellMatch;
+    
+    while ((cellMatch = cellRegex.exec(rowHtml)) !== null) {
+      // Clean cell content by removing HTML tags and extra whitespace
+      const cellContent = cellMatch[1]
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      cells.push(cellContent);
+    }
+    
+    if (cells.length > 0) {
+      rows.push(cells);
+    }
+  }
+  
+  // Try to identify the category from the table content
+  const category = identifyCategoryFromTable(tableHtml);
+  const tableName = extractTableName(tableHtml);
+  
+  // Parse rows into drug data
+  for (let i = 1; i < rows.length; i++) { // Skip header row
+    const drug = parseRowToDrug(rows[i], category, sourceFile);
+    if (drug) {
+      drugs.push(drug);
+    }
+  }
+  
+  return {
+    category,
+    drugs,
+    tableName,
+    pageNumber: extractPageNumber(tableHtml)
+  };
+}
+
+/**
+ * Parse a table row into drug data
+ */
+function parseRowToDrug(row: string[], category: string, sourceFile: string): ExtractedDrugData | null {
+  if (row.length < 3) return null; // Need at least some basic info
+  
+  try {
+    // This is a simplified parsing logic - in reality, you would need more sophisticated
+    // parsing based on the actual table structure from Nelson Textbook
+    const name = row[0] || '';
+    const genericName = row[1] || name;
+    const indications = row[2] || '';
+    const dosage = row[3] || '';
+    
+    // Extract dosage information from dosage string
+    const dosageInfo = parseDosageString(dosage);
+    
+    return {
+      name,
+      genericName,
+      brandNames: '',
+      indications,
+      contraindications: '',
+      sideEffects: '',
+      precautions: '',
+      dosageInfo,
+      category,
+      source: sourceFile
+    };
+  } catch (error) {
+    console.warn('Error parsing row:', error);
+    return null;
+  }
+}
+
+/**
+ * Parse dosage string into structured dosage information
+ */
+function parseDosageString(dosageStr: string): DosageInfo[] {
+  // This is a simplified parser - you would need to customize this based on
+  // the actual format used in Nelson Textbook tables
+  const dosageInfo: DosageInfo[] = [];
+  
+  // Try to extract common dosage patterns
+  const patterns = [
+    /(\d+(?:\.\d+)?)\s*mg\/kg\/day/i,
+    /(\d+(?:\.\d+)?)\s*mg\/kg\/dose/i,
+    /(\d+(?:\.\d+)?)\s*mg\/day/i,
+    /(\d+(?:\.\d+)?)\s*mcg\/kg\/day/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = dosageStr.match(pattern);
+    if (match) {
+      dosageInfo.push({
+        ageGroup: 'Children',
+        weightRange: 'Varies',
+        dosage: match[0],
+        frequency: extractFrequency(dosageStr),
+        route: extractRoute(dosageStr),
+        maxDailyDose: extractMaxDose(dosageStr)
+      });
+      break;
+    }
+  }
+  
+  // If no pattern matched, create a basic entry
+  if (dosageInfo.length === 0 && dosageStr.trim()) {
+    dosageInfo.push({
+      ageGroup: 'Children',
+      weightRange: 'Varies',
+      dosage: dosageStr,
+      frequency: extractFrequency(dosageStr),
+      route: extractRoute(dosageStr),
+      maxDailyDose: extractMaxDose(dosageStr)
+    });
+  }
+  
+  return dosageInfo;
+}
+
+/**
+ * Extract frequency from dosage string
+ */
+function extractFrequency(dosageStr: string): string {
+  const frequencyPatterns = [
+    /once\s*daily/i,
+    /twice\s*daily/i,
+    /three\s*times\s*daily/i,
+    /every\s*(\d+)\s*hours/i,
+    /q(\d+)h/i,
+    /bid/i,
+    /tid/i,
+    /qid/i
+  ];
+  
+  for (const pattern of frequencyPatterns) {
+    const match = dosageStr.match(pattern);
+    if (match) {
+      return match[0];
+    }
+  }
+  
+  return 'As directed';
+}
+
+/**
+ * Extract route from dosage string
+ */
+function extractRoute(dosageStr: string): string {
+  const routePatterns = [
+    /oral/i,
+    /iv/i,
+    /im/i,
+    /subcutaneous/i,
+    /intramuscular/i,
+    /intravenous/i
+  ];
+  
+  for (const pattern of routePatterns) {
+    const match = dosageStr.match(pattern);
+    if (match) {
+      return match[0];
+    }
+  }
+  
+  return 'Oral';
+}
+
+/**
+ * Extract maximum dose from dosage string
+ */
+function extractMaxDose(dosageStr: string): string | undefined {
+  const maxPatterns = [
+    /max\s*(\d+(?:\.\d+)?)\s*mg\/kg\/day/i,
+    /maximum\s*(\d+(?:\.\d+)?)\s*mg\/day/i,
+    /not\s*to\s*exceed\s*(\d+(?:\.\d+)?)\s*mg/i
+  ];
+  
+  for (const pattern of maxPatterns) {
+    const match = dosageStr.match(pattern);
+    if (match) {
+      return match[0];
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Identify category from table content
+ */
+function identifyCategoryFromTable(tableHtml: string): string {
+  const content = tableHtml.toLowerCase();
+  
+  const categoryKeywords = {
+    'Infectious Diseases': ['antibiotic', 'antimicrobial', 'infection', 'bacterial', 'viral'],
+    'Pediatric Drug Therapy': ['analgesic', 'antipyretic', 'pain', 'fever'],
+    'Cardiovascular System': ['cardiac', 'hypertension', 'heart', 'blood pressure'],
+    'Respiratory System': ['asthma', 'bronchitis', 'pulmonary', 'respiratory'],
+    'Nutrition': ['vitamin', 'mineral', 'nutrition', 'supplement'],
+    'Endocrinology': ['diabetes', 'thyroid', 'hormone', 'endocrine'],
+    'Neurology': ['seizure', 'epilepsy', 'neurological', 'migraine'],
+    'Growth and Development': ['growth', 'hormone', 'development'],
+    'Fluid, Electrolyte, and Acid–Base Disorders': ['electrolyte', 'fluid', 'hydration'],
+    'The Acutely Ill Child': ['emergency', 'acute', 'critical'],
+    'Genetics and Metabolic Disorders': ['metabolic', 'genetic', 'enzyme'],
+    'Adolescent Medicine': ['adolescent', 'puberty', 'contraceptive'],
+    'Immunology': ['immunoglobulin', 'immune', 'allergy'],
+    'Allergic Disorders': ['allergy', 'antihistamine', 'allergic'],
+    'Rheumatic Diseases': ['arthritis', 'rheumatic', 'joint'],
+    'Digestive System': ['gi', 'gastrointestinal', 'digestive', 'liver'],
+    'Blood (Hematology)': ['anemia', 'blood', 'hematology', 'coagulation'],
+    'Kidneys and Urinary Tract (Nephrology & Urology)': ['renal', 'kidney', 'urinary', 'nephrology'],
+    'Ophthalmology': ['eye', 'ophthalmic', 'vision'],
+    'Ear, Nose, and Throat (ENT)': ['ent', 'ear', 'nose', 'throat'],
+    'Skin (Dermatology)': ['skin', 'dermatologic', 'rash'],
+    'Bone and Joint Disorders (Orthopedics)': ['bone', 'orthopedic', 'musculoskeletal'],
+    'Rehabilitation and Chronic Care': ['rehabilitation', 'chronic', 'therapy'],
+    'Environmental Health': ['toxicology', 'poisoning', 'environmental'],
+    'Behavioral and Psychiatric Disorders': ['adhd', 'psychiatric', 'behavioral'],
+    'Learning Disorders': ['learning', 'cognitive', 'developmental'],
+    'Children with Special Needs': ['special', 'disability', 'cerebral palsy']
+  };
+  
+  for (const [category, keywords] of Object.entries(categoryKeywords)) {
+    for (const keyword of keywords) {
+      if (content.includes(keyword)) {
+        return category;
+      }
+    }
+  }
+  
+  return 'General';
+}
+
+/**
+ * Extract table name from HTML
+ */
+function extractTableName(tableHtml: string): string {
+  // Look for heading before table or caption within table
+  const headingMatch = tableHtml.match(/<h[1-6][^>]*>([^<]*)<\/h[1-6]>/i);
+  if (headingMatch) {
+    return headingMatch[1].trim();
+  }
+  
+  const captionMatch = tableHtml.match(/<caption[^>]*>([^<]*)<\/caption>/i);
+  if (captionMatch) {
+    return captionMatch[1].trim();
+  }
+  
+  return 'Drug Dosage Table';
+}
+
+/**
+ * Extract page number from HTML
+ */
+function extractPageNumber(tableHtml: string): number | undefined {
+  const pageMatch = tableHtml.match(/page\s*(\d+)/i);
+  if (pageMatch) {
+    return parseInt(pageMatch[1]);
+  }
+  return undefined;
+}
+
+/**
+ * Extract drug data from multiple DOCX files in a directory
+ */
+export async function extractDrugsFromDocxFiles(directoryPath: string): Promise<ExtractedDrugData[]> {
+  try {
+    if (!fs.existsSync(directoryPath)) {
+      throw new Error(`Directory not found: ${directoryPath}`);
+    }
+
+    const files = fs.readdirSync(directoryPath);
+    const docxFiles = files.filter(file => file.endsWith('.docx') || file.endsWith('.doc'));
+    
+    const allDrugs: ExtractedDrugData[] = [];
+
+    for (const file of docxFiles) {
+      const filePath = path.join(directoryPath, file);
+      try {
+        const parsedData = await parseDocxFile(filePath);
+        const drugs = parsedData.flatMap(data => data.drugs);
+        allDrugs.push(...drugs);
+      } catch (error) {
+        console.error(`Error parsing file ${file}:`, error);
+      }
+    }
+
+    return allDrugs;
+  } catch (error) {
+    console.error('Error extracting drugs from DOCX files:', error);
+    throw error;
+  }
+}
+
+/**
+ * Validate extracted drug data
+ */
+export function validateDrugData(drug: ExtractedDrugData): boolean {
+  const requiredFields = ['name', 'indications', 'dosageInfo', 'category'];
+  
+  for (const field of requiredFields) {
+    if (!drug[field as keyof ExtractedDrugData]) {
+      console.warn(`Missing required field '${field}' in drug: ${drug.name}`);
+      return false;
+    }
+  }
+
+  if (!Array.isArray(drug.dosageInfo) || drug.dosageInfo.length === 0) {
+    console.warn(`No dosage information for drug: ${drug.name}`);
+    return false;
+  }
+
+  for (const dosage of drug.dosageInfo) {
+    const dosageRequiredFields = ['ageGroup', 'weightRange', 'dosage', 'frequency', 'route'];
+    for (const field of dosageRequiredFields) {
+      if (!dosage[field as keyof DosageInfo]) {
+        console.warn(`Missing required dosage field '${field}' in drug: ${drug.name}`);
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Clean and normalize extracted drug data
+ */
+export function cleanDrugData(drug: ExtractedDrugData): ExtractedDrugData {
+  return {
+    ...drug,
+    name: drug.name.trim(),
+    genericName: drug.genericName?.trim(),
+    brandNames: drug.brandNames?.trim(),
+    indications: drug.indications.trim(),
+    contraindications: drug.contraindications?.trim(),
+    sideEffects: drug.sideEffects?.trim(),
+    precautions: drug.precautions?.trim(),
+    category: drug.category.trim(),
+    dosageInfo: drug.dosageInfo.map(dosage => ({
+      ...dosage,
+      ageGroup: dosage.ageGroup.trim(),
+      weightRange: dosage.weightRange.trim(),
+      dosage: dosage.dosage.trim(),
+      frequency: dosage.frequency.trim(),
+      route: dosage.route.trim(),
+      maxDailyDose: dosage.maxDailyDose?.trim()
+    }))
+  };
+}
+
+/**
+ * Convert extracted drug data to the format used in the application
+ */
+export function convertToAppFormat(drugs: ExtractedDrugData[]) {
+  const categorizedDrugs: Record<string, any[]> = {};
+
+  drugs.forEach(drug => {
+    const categoryKey = getCategoryKey(drug.category);
+    if (!categorizedDrugs[categoryKey]) {
+      categorizedDrugs[categoryKey] = [];
+    }
+
+    categorizedDrugs[categoryKey].push({
+      id: generateDrugId(drug.name, categoryKey),
+      name: drug.name,
+      genericName: drug.genericName || drug.name,
+      brandNames: drug.brandNames || '',
+      contraindications: drug.contraindications || '',
       sideEffects: drug.sideEffects || '',
       precautions: drug.precautions || '',
       dosageInfo: drug.dosageInfo
@@ -95,21 +567,21 @@ function generateTypeScriptFile(categorizedDrugs: Record<string, any[]>): string
       content += `    {\n`;
       content += `      id: '${drug.id}',\n`;
       content += `      name: '${drug.name.replace(/'/g, "\\'")}',\n`;
-      content += `      genericName: '${drug.genericName.replace(/'/g, "\\'")}',\n`;
-      content += `      brandNames: '${drug.brandNames.replace(/'/g, "\\'")}',\n`;
-      content += `      indications: '${drug.indications.replace(/'/g, "\\'")}',\n`;
-      content += `      contraindications: '${drug.contraindications.replace(/'/g, "\\'")}',\n`;
-      content += `      sideEffects: '${drug.sideEffects.replace(/'/g, "\\'")}',\n`;
-      content += `      precautions: '${drug.precautions.replace(/'/g, "\\'")}',\n`;
+      content += `      genericName: '${(drug.genericName || '').replace(/'/g, "\\'")}',\n`;
+      content += `      brandNames: '${(drug.brandNames || '').replace(/'/g, "\\'")}',\n`;
+      content += `      indications: '${(drug.indications || '').replace(/'/g, "\\'")}',\n`;
+      content += `      contraindications: '${(drug.contraindications || '').replace(/'/g, "\\'")}',\n`;
+      content += `      sideEffects: '${(drug.sideEffects || '').replace(/'/g, "\\'")}',\n`;
+      content += `      precautions: '${(drug.precautions || '').replace(/'/g, "\\'")}',\n`;
       content += `      dosageInfo: [\n`;
       
       drug.dosageInfo.forEach((dosage: any) => {
         content += `        {\n`;
-        content += `          ageGroup: '${dosage.ageGroup.replace(/'/g, "\\'")}',\n`;
-        content += `          weightRange: '${dosage.weightRange.replace(/'/g, "\\'")}',\n`;
-        content += `          dosage: '${dosage.dosage.replace(/'/g, "\\'")}',\n`;
-        content += `          frequency: '${dosage.frequency.replace(/'/g, "\\'")}',\n`;
-        content += `          route: '${dosage.route.replace(/'/g, "\\'")}',\n`;
+        content += `          ageGroup: '${(dosage.ageGroup || '').replace(/'/g, "\\'")}',\n`;
+        content += `          weightRange: '${(dosage.weightRange || '').replace(/'/g, "\\'")}',\n`;
+        content += `          dosage: '${(dosage.dosage || '').replace(/'/g, "\\'")}',\n`;
+        content += `          frequency: '${(dosage.frequency || '').replace(/'/g, "\\'")}',\n`;
+        content += `          route: '${(dosage.route || '').replace(/'/g, "\\'")}',\n`;
         if (dosage.maxDailyDose) {
           content += `          maxDailyDose: '${dosage.maxDailyDose.replace(/'/g, "\\'")}'\n`;
         } else {
